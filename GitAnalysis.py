@@ -24,6 +24,19 @@ class GitCommit():
     def lines_altered(self):
         return int(self.values["lines_added"]) + int(self.values["lines_deleted"])
 
+    @property
+    def lines_weighted(self):
+        added = int(self.values["lines_added"])
+        deleted = int(self.values["lines_deleted"])
+        changed = np.maximum(added, deleted)
+        if added >= deleted:
+            added = added - changed
+            deleted = 0
+        else:
+            deleted = deleted - changed
+            added = 0
+        return 1*changed + 1.5*added + 0.2*deleted 
+
     @staticmethod
     def get_fields():
         return ",".join(GitCommit.fields) 
@@ -50,18 +63,13 @@ class GitAnalysis():
                 line_count += 1
             print(f'┣ loaded {line_count} commits from {fn}')
 
-    def plot2(self, attr):
-        x = self.commits[0]
-        t = x.timestamp
-        print(t) 
-
-    def plot(self, attr):
+    def plot(self, min_dt, relative_band, attr):
         t = []
         y = []
         tags = [];
         for c in self.commits:
             t.append(c.timestamp)
-            y.append(c.lines_altered)
+            y.append(getattr(c, attr))
             tags.append(c.values["tag"])
 
         t = np.array(t)
@@ -77,7 +85,7 @@ class GitAnalysis():
         ax.plot(t, y, linewidth=2.0)
         matplt.grid(True)
 
-        [is_at_steady_state, idx_ranges] = GitAnalysis.findSteadyState(t, y, 180, 0.005)
+        [is_at_steady_state, idx_ranges] = GitAnalysis.findSteadyState(t, y, min_dt, relative_band)
         
         stable_release = False
         stable_release_region = False
@@ -114,7 +122,7 @@ class GitAnalysis():
         dt_start = self.commits[0].values["date"]
         matplt.title(f'Git Commit Analysis: {self.name}')
         ax.set_xlabel(f'Days since {dt_start}')
-        ax.set_ylabel('Cummulative sum of altered lines of code [-]')
+        ax.set_ylabel(f'Cummulative sum of {attr}')
         matplt.show()
 
         print('Stable releases')

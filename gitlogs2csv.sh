@@ -31,11 +31,16 @@ fi
 echo -ne "┣ getting git tags ... "
 declare -A TAGS
 for TAG in $(git tag) ; do
+    
+    COMMIT_ID_RAW=$(git rev-list -n 1 $TAG)
+    # 9
+    COMMIT_ID=$(echo $COMMIT_ID_RAW | cut -c1-9)
+    TAGS[$COMMIT_ID]=$TAG
     # 8 
-    COMMIT_ID=$(git rev-list -n 1 $TAG | cut -c1-8)
+    COMMIT_ID=$(echo $COMMIT_ID_RAW | cut -c1-8)
     TAGS[$COMMIT_ID]=$TAG
     # 7
-    COMMIT_ID=$(git rev-list -n 1 $TAG | cut -c1-7)
+    COMMIT_ID=$(echo $COMMIT_ID_RAW | cut -c1-7)
     TAGS[$COMMIT_ID]=$TAG
 done
 echo "done (${#TAGS[@]} tags)"
