@@ -33,6 +33,9 @@ declare -A TAGS
 for TAG in $(git tag) ; do
     
     COMMIT_ID_RAW=$(git rev-list -n 1 $TAG)
+    # 10
+    COMMIT_ID=$(echo $COMMIT_ID_RAW | cut -c1-10)
+    TAGS[$COMMIT_ID]=$TAG
     # 9
     COMMIT_ID=$(echo $COMMIT_ID_RAW | cut -c1-9)
     TAGS[$COMMIT_ID]=$TAG
