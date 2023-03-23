@@ -155,4 +155,68 @@ class GitAnalysis():
             idx_start = idx_last_in_band + 1
         return [is_sig_at_steady_state, idx_ranges]
 
+    @staticmethod
+    def weibull(x, alfa, k):
+        if x < 0:
+            return 0
+        else:
+            return (k / alfa) * (x / alfa)**(k - 1) * np.exp(-(x / alfa)**k)
+
+    @staticmethod
+    def exponential(x, alfa):
+        if x < 0:
+            return 0
+        else:
+            return np.exp(-1.0*alfa*x)
+
+    def plot2(self, attr):
+        # Parameter - after 180 days, 5% bugs are left
+        alfa = -1.0 * np.log(0.05) / 30
+        
+        t = []
+        y = []
+        tags = [];
+        for c in self.commits:
+            t.append(c.timestamp)
+            y.append(getattr(c, attr))
+            tags.append(c.values["tag"])
+
+        t = np.array(t)
+        y = np.array(y)
+        idx = np.argsort(t)
+        t = t[idx]
+        y = y[idx]
+        t = t - t[0]
+        y = np.cumsum(y)
+        y = y - y[0]
+        p = np.full(t.size, 0.0)
+        for i, t1 in enumerate(t):
+            for t2 in t[i:]:
+                p[i] = p[i] + y[i]*GitAnalysis.exponential(t2 - t1, alfa)
+
+        # p_norm = (p-np.min(p))/(np.max(p)-np.min(p))
+        p_norm = p
+
+        [fig, axs] = matplt.subplots(2)
+        axs[0].plot(t, y, linewidth=1.0)
+        matplt.grid(True)
+        axs[1].plot(t, p_norm, linewidth=1.0)
+        matplt.grid(True)
+        
+        for i, txt in enumerate(tags):
+            if txt:
+                for ax in axs:
+                    last_annotation = ax.annotate(txt, (t[i], 0), color='gray')
+                    last_axvline = ax.axvline(t[i], linestyle=':', color='gray', linewidth=0.5)
+                axs[0].plot(t[i], y[i], 'x', color = 'red')
+                axs[1].plot(t[i], p_norm[i], 'x', color = 'red')
+                last_txt = txt
+
+        fig.suptitle(f'Git Commit Analysis: {self.name}')        
+        dt_start = self.commits[0].values["date"]
+        for ax in axs:
+            ax.set_xlabel(f'Days since {dt_start}')
+        axs[0].set_ylabel(f'Cummulative sum of {attr}')
+        axs[1].set_ylabel(f'Cummulative normalized fault score')
+        matplt.show()
         
