@@ -2,6 +2,8 @@ import csv
 import time
 import datetime
 import numpy as np
+import subprocess
+import re
 
 
 import matplotlib 
@@ -39,7 +41,128 @@ class GitCommit():
 
     @staticmethod
     def get_fields():
-        return ",".join(GitCommit.fields) 
+        return ",".join(GitCommit.fields)
+
+class GitCommit2():
+    def __init__(self, path):
+        self.path = path
+
+    def get_all_commits(self):
+        out = GitCommit2.execute_shell_command(f"""
+            cd {self.path} && git log --all --reverse --date=local --date=format-local:'%Y-%m-%d %H:%M:%S' --pretty=format:"%h,%an,%ad"
+            """)
+        commits = []
+        for o in out:
+            v = o.split(',')
+            c = {}
+            c['id'] = v[0]
+            c['author'] = v[1]
+            c['timestamp'] = GitCommit2.timestamp(v[2])
+            commits.append(c)
+        return commits  
+
+    def get_altered_lines(self, commit_id):
+        out = GitCommit2.execute_shell_command(f"""
+            cd {self.path} && git show --unified=0 {commit_id} 2>&1
+            """)
+        # out = '\n'.join(out)    
+        # print(f'{out}')
+        current_file = ''
+        ptrn_file = re.compile(r"""		    
+            [\+-][\+-][\+-]\s[a,b]/(?P<file>.*)\s?
+            """, re.VERBOSE)
+
+        ptrn_chunk = re.compile(r"""		    
+            @@\s-(?P<m_line>\d+),?(?P<m_length>\d*)\s\+(?P<p_line>\d+),?(?P<p_length>\d*)\s@@.*
+            """, re.VERBOSE)
+
+        altered_lines = {}
+        for o in out:
+            match = ptrn_file.match(o)
+            if match is not None:
+                current_file = match.group("file")
+                # print(current_file)
+                if not current_file in altered_lines:
+                    altered_lines[current_file] = {}
+                    altered_lines[current_file]['added'] = []
+                    altered_lines[current_file]['deleted'] = []
+            elif current_file:    
+                match = ptrn_chunk.match(o)
+                if match is not None:
+                    m_line = int(match.group("m_line"))
+                    m_length = match.group("m_length")
+                    if not m_length:
+                        m_length = 1
+                    else:
+                        m_length = int(m_length)
+                    p_line = int(match.group("p_line"))
+                    p_length = match.group("p_length")
+                    if not p_length:
+                        p_length = 1
+                    else:
+                        p_length = int(p_length)    
+
+                    deleted_lines = []    
+                    for i in range(0, m_length):
+                        deleted_lines.append(m_line+i)
+                    if deleted_lines:
+                        altered_lines[current_file]['deleted'] += deleted_lines    
+
+                    added_lines = []
+                    for i in range(0, p_length):
+                        added_lines.append(p_line+i)
+                    if added_lines:
+                        altered_lines[current_file]['added'] += added_lines
+                    
+        for file in altered_lines:
+            altered_lines[file]['added'] = GitCommit2.unique(altered_lines[file]['added'])
+            altered_lines[file]['deleted'] = GitCommit2.unique(altered_lines[file]['deleted'])
+            altered_lines[file]['deleted'].sort(reverse=True) 
+                          
+        return altered_lines
+    
+    def track(self, commits):
+        tracker = {}
+        tracker_history = {}
+        for c in commits:
+            print(c['id'])
+            altered_lines = self.get_altered_lines(c['id'])
+            for file, v in altered_lines.items():
+                print(file)
+                if not file in tracker:
+                    tracker[file] = {}
+                    tracker[file]['lines'] = ['N/A']
+                for i in v['deleted']:
+                    if i:
+                        removed = tracker[file]['lines'].pop(i)
+                        timespan = c['timestamp'] - tracker_history[removed]['timestamp']
+                        print(f'Line {i} from commit {removed} removed! Lasted {timespan/3600/24} days!')  
+                for i in v['added']:
+                    if i:
+                        tracker[file]['lines'].insert(i, c['id'])
+            tracker_history[c['id']] = {}
+            tracker_history[c['id']]['timestamp'] = c['timestamp']
+            tracker_history[c['id']]['tracker'] = tracker
+
+        return tracker_history
+
+    @staticmethod
+    def execute_shell_command(cmd):
+        # Shell executes given command
+        try:
+            r = subprocess.check_output(cmd, shell=True)
+        except subprocess.CalledProcessError as e:
+            r = e.output 
+        r = r.decode('UTF-8','ignore').split("\n")
+        return r 
+
+    @staticmethod
+    def timestamp(date):
+        return time.mktime(datetime.datetime.strptime(date, '%Y-%m-%d %H:%M:%S').timetuple())
+
+    @staticmethod
+    def unique(a):
+        return list(set(a))       
 
 class GitAnalysis():
     def __init__(self, name):
