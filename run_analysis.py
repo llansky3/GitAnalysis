@@ -3,7 +3,7 @@ from GitAnalysis import GitAnalysis
 if __name__ == '__main__':
     package = ''
     package = 'cryptsetup'
-    # package = 'jemalloc'
+    package = 'jemalloc'
     #package = 'util-linux'
     #package = 'iptables'
     #package = 'kexec-tools'

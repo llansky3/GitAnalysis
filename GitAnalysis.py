@@ -4,6 +4,8 @@ import datetime
 import numpy as np
 import subprocess
 import re
+import warnings
+import copy
 
 
 import matplotlib 
@@ -21,6 +23,10 @@ class GitCommit():
     def timestamp(self):
         t = time.mktime(datetime.datetime.strptime(self.values["date"], '%Y-%m-%d %H:%M:%S').timetuple())
         return t/(3600*24)
+
+    @property
+    def datetime(self):
+        return self.values["date"]
 
     @property
     def lines_altered(self):
@@ -49,7 +55,7 @@ class GitCommit2():
 
     def get_all_commits(self):
         out = GitCommit2.execute_shell_command(f"""
-            cd {self.path} && git log --all --reverse --date=local --date=format-local:'%Y-%m-%d %H:%M:%S' --pretty=format:"%h,%an,%ad"
+            cd {self.path} && git log --all --topo-order --reverse --date=local --date=format-local:'%Y-%m-%d %H:%M:%S' --pretty=format:"%h,%an,%ad"
             """)
         commits = []
         for o in out:
@@ -58,18 +64,53 @@ class GitCommit2():
             c['id'] = v[0]
             c['author'] = v[1]
             c['timestamp'] = GitCommit2.timestamp(v[2])
+            c['patch-id'] = GitCommit2.execute_shell_command(f"""
+                cd {self.path} && git show {c['id']} | git patch-id
+                """)
+            c['patch-id'] = c['patch-id'][0].split(' ')
             commits.append(c)
-        return commits  
+        return commits
+
+    def get_all_tags(self):
+        out = GitCommit2.execute_shell_command(f"""
+            cd {self.path} && git tag
+            """)
+        tags = {}    
+        for o in out:
+            if o:
+                longhash = GitCommit2.execute_shell_command(f"""
+                    cd {self.path} && git rev-list -n 1 {o}
+                    """)[0]
+                tags[o] = GitCommit2.execute_shell_command(f"""
+                    cd {self.path} && git rev-parse --short {longhash}
+                    """)[0]
+        return tags
+
 
     def get_altered_lines(self, commit_id):
         out = GitCommit2.execute_shell_command(f"""
             cd {self.path} && git show --unified=0 {commit_id} 2>&1
             """)
-        # out = '\n'.join(out)    
-        # print(f'{out}')
-        current_file = ''
-        ptrn_file = re.compile(r"""		    
-            [\+-][\+-][\+-]\s[a,b]/(?P<file>.*)\s?
+        rename_file = {}
+        rename_file['from'] = ''
+        rename_file['to'] = ''
+        ptrn_rename_file = {}
+        ptrn_rename_file['from'] = re.compile(r"""		    
+            rename\sfrom\s(?P<file>.*)\s?
+            """, re.VERBOSE)
+        ptrn_rename_file['to'] = re.compile(r"""		    
+            rename\sto\s(?P<file>.*)\s?
+            """, re.VERBOSE)
+
+        current_file = {}
+        current_file['a'] = ''
+        current_file['b'] = ''
+        ptrn_current_file = {}
+        ptrn_current_file['a'] = re.compile(r"""		    
+            ---\sa/(?P<file>.*)\s?
+            """, re.VERBOSE)
+        ptrn_current_file['b'] = re.compile(r"""		    
+            \+\+\+\sb/(?P<file>.*)\s?
             """, re.VERBOSE)
 
         ptrn_chunk = re.compile(r"""		    
@@ -77,74 +118,149 @@ class GitCommit2():
             """, re.VERBOSE)
 
         altered_lines = {}
+        renamed_files = []
         for o in out:
-            match = ptrn_file.match(o)
-            if match is not None:
-                current_file = match.group("file")
-                # print(current_file)
-                if not current_file in altered_lines:
-                    altered_lines[current_file] = {}
-                    altered_lines[current_file]['added'] = []
-                    altered_lines[current_file]['deleted'] = []
-            elif current_file:    
-                match = ptrn_chunk.match(o)
+            # Rename files
+            for key in ptrn_rename_file:  
+                match = ptrn_rename_file[key].match(o)
                 if match is not None:
-                    m_line = int(match.group("m_line"))
-                    m_length = match.group("m_length")
-                    if not m_length:
-                        m_length = 1
-                    else:
-                        m_length = int(m_length)
-                    p_line = int(match.group("p_line"))
-                    p_length = match.group("p_length")
-                    if not p_length:
-                        p_length = 1
-                    else:
-                        p_length = int(p_length)    
+                    rename_file[key] = match.group("file")
+                    if key == 'to':
+                        assert rename_file['from'], 'This should never happen!'
+                        renamed_files.append(rename_file.copy())
+                        rename_file['from'] = ''
+                        rename_file['to'] = ''
+                    break
+            else:
+                # Code changes
+                for key in ptrn_current_file:  
+                    match = ptrn_current_file[key].match(o)
+                    if match is not None:
+                        current_file[key] = match.group("file")
+                        if not current_file[key] in altered_lines:
+                            altered_lines[current_file[key]] = {}
+                            altered_lines[current_file[key]]['added'] = []
+                            altered_lines[current_file[key]]['deleted'] = []
+                        break
+                else:      
+                    match = ptrn_chunk.match(o)
+                    if match is not None:
+                        m_line = int(match.group("m_line"))
+                        m_length = match.group("m_length")
+                        if not m_length:
+                            m_length = 1
+                        else:
+                            m_length = int(m_length)
+                        p_line = int(match.group("p_line"))
+                        p_length = match.group("p_length")
+                        if not p_length:
+                            p_length = 1
+                        else:
+                            p_length = int(p_length)    
 
-                    deleted_lines = []    
-                    for i in range(0, m_length):
-                        deleted_lines.append(m_line+i)
-                    if deleted_lines:
-                        altered_lines[current_file]['deleted'] += deleted_lines    
+                        deleted_lines = []    
+                        for i in range(0, m_length):
+                            deleted_lines.append(m_line+i)
+                        if deleted_lines:
+                            assert current_file['a'], 'This should never happen!'
+                            altered_lines[current_file['a']]['deleted'] += deleted_lines    
 
-                    added_lines = []
-                    for i in range(0, p_length):
-                        added_lines.append(p_line+i)
-                    if added_lines:
-                        altered_lines[current_file]['added'] += added_lines
-                    
+                        added_lines = []
+                        for i in range(0, p_length):
+                            added_lines.append(p_line+i)
+                        if added_lines:
+                            assert current_file['b'], 'This should never happen!'
+                            altered_lines[current_file['b']]['added'] += added_lines
+        # Clean up
         for file in altered_lines:
             altered_lines[file]['added'] = GitCommit2.unique(altered_lines[file]['added'])
+            altered_lines[file]['added'].sort() 
             altered_lines[file]['deleted'] = GitCommit2.unique(altered_lines[file]['deleted'])
-            altered_lines[file]['deleted'].sort(reverse=True) 
-                          
-        return altered_lines
+            altered_lines[file]['deleted'].sort(reverse=True)
+
+            # # Added before correction. This shifts the indexes!
+            # for idx, x in enumerate(altered_lines[file]['added']):
+            #     if idx == 0 or altered_lines[file]['added'][idx-1] + 1 == x:
+            #         continue
+            #     else:
+            #         altered_lines[file]['added'][idx] += idx
+      
+        return [altered_lines, renamed_files]
     
-    def track(self, commits):
+    def track(self, commits, tags):
         tracker = {}
         tracker_history = {}
-        for c in commits:
+        blacklist = []
+        list_of_bad_files = []
+        stats = []
+        release_commits = tags.values()
+        for iter, c in enumerate(commits):
+            print(iter)
+            if c['patch-id'][0] in blacklist:
+                warnings.warn(f"Skipping {c['id']} - blacklisted!")
+                continue
+            blacklist.append(c['patch-id'][0])
             print(c['id'])
-            altered_lines = self.get_altered_lines(c['id'])
+            [altered_lines, renamed_files] = self.get_altered_lines(c['id'])
+            # Rename files
+            if renamed_files:
+                for rename_file in renamed_files:
+                    if rename_file['from'] in tracker:
+                        tracker[rename_file['to']] = copy.deepcopy(tracker[rename_file['from']])
+                    else:
+                        # This shall happen only for empty files
+                        warnings.warn(f"Cannot rename {rename_file['from']} to {rename_file['to']}!")
+            # Code changes
             for file, v in altered_lines.items():
                 print(file)
                 if not file in tracker:
                     tracker[file] = {}
                     tracker[file]['lines'] = ['N/A']
-                for i in v['deleted']:
-                    if i:
-                        removed = tracker[file]['lines'].pop(i)
-                        timespan = c['timestamp'] - tracker_history[removed]['timestamp']
-                        print(f'Line {i} from commit {removed} removed! Lasted {timespan/3600/24} days!')  
-                for i in v['added']:
-                    if i:
-                        tracker[file]['lines'].insert(i, c['id'])
-            tracker_history[c['id']] = {}
-            tracker_history[c['id']]['timestamp'] = c['timestamp']
-            tracker_history[c['id']]['tracker'] = tracker
-
-        return tracker_history
+                    tracker[file]['commitcounter'] = ['N/A']
+                    tracker[file]['releasecounter'] = ['N/A']
+                if  v['deleted']:   
+                    for l in v['deleted']:
+                        if l < len(tracker[file]['lines']) and not file in list_of_bad_files: 
+                            removed = tracker[file]['lines'].pop(l)
+                            commitcounter = tracker[file]['commitcounter'].pop(l)
+                            releasecounter = tracker[file]['releasecounter'].pop(l)
+                            timespan = c['timestamp'] - tracker_history[removed]['timestamp']
+                            print(f'Line {l} from commit {removed} removed! Lasted {timespan/3600/24} days! Survived {commitcounter} commits and {releasecounter} releases!')
+                            if not file in list_of_bad_files:
+                                # Gather statistics for plotting
+                                stats.append({
+                                    'file': file,
+                                    'line': l, 
+                                    'timeend': c['timestamp'],
+                                    'timestart': tracker_history[removed]['timestamp'],
+                                    'timespan': timespan
+                                })
+                        else:
+                            # The git commit patch order is not right 
+                            warnings.warn(f"Cannot remove line {l} from {file} in commit {c['id']}!")
+                            if not file in list_of_bad_files:
+                                list_of_bad_files.append(file)
+                if v['added']:
+                    for l in v['added']:
+                        tracker[file]['lines'].insert(l, c['id'])
+                        tracker[file]['commitcounter'].insert(l, 0)
+                        tracker[file]['releasecounter'].insert(l, 0)
+            # Increase the commit and release counters
+            isReleaseCommit = False
+            if c['id'] in release_commits:
+                isReleaseCommit = True
+            for f in tracker:
+                for i, v in enumerate(tracker[f]['commitcounter']):
+                    if i > 0:
+                        tracker[f]['commitcounter'][i] += 1
+                        if isReleaseCommit:
+                            tracker[f]['releasecounter'][i] += 1
+            if True or isReleaseCommit or iter == len(commits) - 1:
+                # Track the history
+                tracker_history[c['id']] = {}
+                tracker_history[c['id']]['timestamp'] = c['timestamp']
+                tracker_history[c['id']]['tracker'] = copy.deepcopy(tracker)
+        return [stats, tracker_history]
 
     @staticmethod
     def execute_shell_command(cmd):
