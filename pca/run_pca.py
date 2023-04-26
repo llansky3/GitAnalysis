@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# https://github.com/kvntng17/weighted-kmeans/blob/master/kmeans.py
 
 import numpy as np
 import pandas as pd
@@ -17,14 +18,31 @@ def load_csv(fn):
     #     v = dataset.values[:,i]
     #     pass
     # distributing the dataset into two components X and Y
-    packages = dataset.iloc[:, 0].values
-    X = dataset.iloc[:, 1:8].values
+    packages = dataset.iloc[1:, 0].values
+    weights = dataset.iloc[0, 1:].values
+    weights = weights.astype(int)
+    weights = np.insert(weights, 0, 0)
+    # X = dataset.iloc[:, 1:8].values
+    # X = dataset.iloc[:, 14:21].values
+    # X = dataset.iloc[:, 23:40].values
+    indicies = []
+    # indicies += [*range(1, 8)]
+    indicies += [*range(14,21)]
+    # indicies += [*range(23,40)]
+    X = dataset.iloc[1:, indicies].values
+    weights = weights[indicies]
     # y = dataset.iloc[:, 13].values
-    return [packages, X]
+    return [packages, X, weights]
 
-def pca(packages, X):
+def pca(packages, X, weights):
+    # Weights as frequency
+    for i, wt in reversed(list(enumerate(weights))):
+        if wt == 0:
+            X = np.delete(X, np.s_[i], axis=1)  
+        for _ in range(1, wt):
+            X = np.c_[X, X[:, i]]
     # Preprocessing - Normalizing the features
-    X = StandardScaler().fit_transform(X) 
+    X = StandardScaler().fit_transform(X)  
     # Principal Component Analysis
     pca = PCA(n_components = 4)
     pca_scores = pca.fit_transform(X)
@@ -33,6 +51,8 @@ def pca(packages, X):
     # K-means
     kmeans_model = KMeans(n_clusters=4, init='k-means++')
     kmeans_label = kmeans_model.fit_predict(pca_scores)
+    kmeans_centroids = kmeans_model.cluster_centers_
+
     # Ploting
     matplt.figure(figsize=(10,10))
     uniq = np.unique(kmeans_label)
@@ -43,6 +63,7 @@ def pca(packages, X):
         txts = packages[kmeans_label == i]
         for i, txt in enumerate(txts):
             matplt.annotate(txt, (x[i], y[i]))
+    matplt.scatter(kmeans_centroids[:, 0], kmeans_centroids[:, 1], c='black', s=50, marker='x')
     matplt.legend()
     matplt.grid(True)
     matplt.xlabel('Principal Component - 1',fontsize=20)
@@ -63,8 +84,6 @@ def pca(packages, X):
  
     # 
     
-   
-    
     # targets = ['Benign', 'Malignant']
     # colors = ['r', 'g']
     # for target, color in zip(targets,colors):
@@ -75,5 +94,5 @@ def pca(packages, X):
     return True
 
 if __name__ == '__main__':
-    [packages, X] = load_csv('./pca/stats-all.csv')
-    pca(packages, X)
+    [packages, X, weights] = load_csv('./pca/stats-all-weighted.csv')
+    pca(packages, X, weights)
