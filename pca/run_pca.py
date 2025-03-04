@@ -27,8 +27,10 @@ def load_csv(fn):
     # X = dataset.iloc[:, 23:40].values
     indicies = []
     # indicies += [*range(1, 8)]
-    indicies += [*range(14,21)]
+    # indicies += [*range(14,21)]
     # indicies += [*range(23,40)]
+    # indicies += [*range(42,48), *range(52,53), *range(57,58), 60]
+    indicies += [*range(1, 6)]
     X = dataset.iloc[1:, indicies].values
     weights = weights[indicies]
     # y = dataset.iloc[:, 13].values
@@ -41,6 +43,9 @@ def pca(packages, X, weights):
             X = np.delete(X, np.s_[i], axis=1)  
         for _ in range(1, wt):
             X = np.c_[X, X[:, i]]
+
+    # TBD: Remove no C/C++ package
+
     # Preprocessing - Normalizing the features
     X = StandardScaler().fit_transform(X)  
     # Principal Component Analysis
@@ -94,5 +99,8 @@ def pca(packages, X, weights):
     return True
 
 if __name__ == '__main__':
-    [packages, X, weights] = load_csv('./pca/stats-all-weighted.csv')
+    # fp = './pca/stats-all-weighted-code-20230531-3.csv'
+    # fp = './pca/stats-all-weighted-jemalloc-corrected.csv'
+    fp = './pca/stats-all-weighted-rado-3.csv'
+    [packages, X, weights] = load_csv(fp)
     pca(packages, X, weights)
