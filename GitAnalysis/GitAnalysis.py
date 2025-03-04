@@ -284,7 +284,10 @@ class GitAnalysis():
     def __init__(self, name):
         print('GIT ANALYSIS')
         print('┏━━━━━')
-        self.name = name
+        if name:
+            self.name = name
+        else:
+            self.name = 'output.csv'
         self.commits = []
 
     def __del__(self):
@@ -436,7 +439,7 @@ class GitAnalysis():
         # p_norm = (p-np.min(p))/(np.max(p)-np.min(p))
         p_norm = p
 
-        [fig, axs] = matplt.subplots(2)
+        [fig, axs] = matplt.subplots(2, sharex=True)
         axs[0].plot(t, y, linewidth=1.0)
         matplt.grid(True)
         axs[1].plot(t, p_norm, linewidth=1.0)

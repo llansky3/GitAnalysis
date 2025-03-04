@@ -10,7 +10,7 @@ import math
 from GitAnalysis import GitAnalysis
 from GitAnalysis import GitCommit2
 
-test = GitCommit2('./../fitness_scoring/jemalloc/')
+test = GitCommit2('./tests/clones/jemalloc/')
 # test = GitCommit2('./../fitness_scoring/cryptsetup/')
 # test = GitCommit2('./../fitness_scoring/git-log-testing/')
 # test.get_altered_lines('c7805f1e')

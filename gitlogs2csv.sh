@@ -1,6 +1,6 @@
 #! /bin/bash
 
-OUTFILE="output.csv"
+OUTFILE="data/output.csv"
 
 # Input checks
 if [ $# -eq 0 ]

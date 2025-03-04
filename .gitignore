@@ -1,7 +1,14 @@
+# Data & output files
 *.data
+data/*.csv
+data/*.png
+data/*.xcf
 *.csv
-ytest.py
 *.ods
+
+# Tests
+tests/clones/*
+!tests/clones/INFO.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
