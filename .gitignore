@@ -1,6 +1,7 @@
 *.data
 *.csv
 ytest.py
+*.ods
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
